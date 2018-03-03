@@ -133,7 +133,7 @@ Particle.prototype.update = function() {
 		this.vSpeed = this.GRAVITY_CAP;
 	this.x += this.hSpeed;
 	this.y += this.vSpeed;
-	if (this.y >= 600)
+	if (this.y >= 800)
 		this.removeFromWorld = true;
 	this.life++;
     Entity.prototype.update.call(this);
@@ -147,12 +147,42 @@ Particle.prototype.draw = function (ctx) {
 	ctx.globalAlpha = 1;
 }
 
+/**
+ * Checks a collision between two entities, adding a bonus X or Y value to the
+ * hitboxes of entity 1 if applicable.
+ */
+function checkCollision(entity1, entity2) {
+	if (entity1.hitBox == null || entity2.hitBox == null)
+		return false;
+    if ((entity1.hitBox.x + entity1.hitBox.width) > entity2.hitBox.x) {
+        if (entity1.hitBox.x < (entity2.hitBox.x + entity2.hitBox.width)) {
+            if (entity1.hitBox.y < entity2.hitBox.y + entity2.hitBox.height) {
+                if (entity1.hitBox.y + entity1.hitBox.height > entity2.hitBox.y) {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
 
 function Arrow(x, y, game) {
     this.animation = new Animation(ASSET_MANAGER.getAsset("./img/arrow.png"), 0, 0, 184, 29, 0.1, 1, true, false, 0, 0);
     this.startAnimation = new Animation(ASSET_MANAGER.getAsset("./img/arrow_start.png"), 0, 0, 184, 29, 0.05, 10, false, false, 0, 0);
 	this.starting = true;
 	this.travelX = 0;
+	this.hSpeed = 0;
+	this.vSpeed = 0;
+	this.tick = 0;
+	this.life = 0;
+	this.generation = 0;
+	this.lastCollision = "none";
+    this.hitBox = {
+    	x: this.x, 
+		y: this.y,
+		width: 10, 
+		height: 10
+	};
     Entity.call(this, game, x, y);
 }
 
@@ -160,30 +190,91 @@ Arrow.prototype = new Entity();
 Arrow.prototype.constructor = Arrow;
 
 Arrow.prototype.update = function() {
-	if (this.starting) {
-        if (this.startAnimation.isDone()) {
-            this.startAnimation.elapsedTime = 0;
-            this.starting = false;
-        }
+	if (this.life > 0) {
+		this.life--;
+		if (this.life == 0) {
+			this.removeFromWorld = true;
+		}
 	}
-	
-	this.game.addEntity(new Particle(ARROW_PART_MAIN, this.x + this.travelX, this.y - 10, 0.2, -0.2, 0.2, -0.2, 0, 0, 5, 5, 10, 50, 0.7, 0.2, true, this.game,
-		new Animation(ASSET_MANAGER.getAsset("./img/pink_flare.png"), 0, 0, 64, 64, 0.03, 16, true, false, 0, 0)));
+	this.tick++;
+	if (this.tick >= 30 && this.starting) {
+		this.starting = false;
+		this.hSpeed = 3 + Math.random() * 12;
+		this.vSpeed = -2 + Math.random() * 10;
+	}
+
+	//function Particle(particleId, x, y, minHSpeed, maxHSpeed, minVSpeed, maxVSpeed,
+	//	gravity, friction, width, maxLife, fadeIn, fadeOut, maxAlpha, alphaVariance, shrink, game, anim) {
+	if (this.lastCollision === "blue")  {
+		this.lastCollision = "none";
+		if (this.generation < 1) {
+			for (i = 0; i < 3; i++) {
+				var newArrow = new Arrow(this.x, this.y, this.game);
+				newArrow.starting = false;
+				newArrow.hSpeed = this.hSpeed + (i * 8) - 4;
+				newArrow.vSpeed = this.vSpeed;
+				newArrow.tick = this.tick;
+				newArrow.life = 50;
+				newArrow.generation = this.generation + 1;
+				this.game.addEntity(newArrow);
+			}
+		}
+	}
+	if (this.lastCollision === "blue")
+		this.game.addEntity(new Particle(ARROW_PART_MAIN, this.x, this.y - 10, 0.2, -0.2, 0.2, -0.2, 0, 0, 5, 50, 10, 50, 0.7, 0.2, true, this.game,
+				new Animation(ASSET_MANAGER.getAsset("./img/pink_flare.png"), 0, 0, 64, 64, 0.03, 16, true, false, 0, 0)));
+	else
+		this.game.addEntity(new Particle(ARROW_PART_MAIN, this.x, this.y - 10, 0.2, -0.2, 0.2, -0.2, 0, 0, 5, 5, 10, 50, 0.7, 0.2, true, this.game,
+			new Animation(ASSET_MANAGER.getAsset("./img/pink_flare.png"), 0, 0, 64, 64, 0.03, 16, true, false, 0, 0)));
 	if (!this.starting) {
-		this.x += 12;
-		this.travelX += 6;
+		this.x += this.hSpeed;
+		//this.travelX += 6;
+		this.vSpeed += 0.3;
+		if (this.vSpeed >= 20)
+			this.vSpeed = 20;
+		this.y += this.vSpeed;
+		this.hitBox.x = this.x;
+		this.hitBox.y = this.y;
+		var that = this;
+		if (this.y >= 700)
+			this.vSpeed *= -1;
+		else
+		this.game.entities.forEach(function(entity) {
+	    	if (entity.solid) {
+		        if (checkCollision(that, entity)) {
+		        	if (that.y > entity.hitBox.y && that.y < entity.hitBox.y + entity.hitBox.height) {
+		        		that.hSpeed *= -1;
+		        		that.x += that.hSpeed;
+		        	} else {
+		        		that.vSpeed *= -1;
+		        		that.y += that.vSpeed;
+		        	}
+		        	if (entity.color === "gray") {
+		        		entity.alpha -= 0.1;
+		        		if (entity.alpha < 0) {
+		        			entity.removeFromWorld = true;
+		        		}
+		        	}
+		        	that.lastCollision = entity.color;
+		        }
+	    	}
+	    });
+		if (this.x >= 800) {
+			this.hSpeed *= -1;
+		}
+		if (this.y >= 1200) {
+			this.removeFromWorld = true;
+		}
 	}
-	if (this.x >= 850)
-		this.removeFromWorld = true;
 	
     Entity.prototype.update.call(this);
 }
 
 Arrow.prototype.draw = function (ctx) {
     if (this.starting) {
-        this.startAnimation.drawFrame(this.game.clockTick, ctx, this.x + this.startAnimation.offsetX, this.y + this.startAnimation.offsetY);
+        //this.startAnimation.drawFrame(this.game.clockTick, ctx, this.x + this.startAnimation.offsetX, this.y + this.startAnimation.offsetY);
     } else {
-        this.animation.drawFrame(this.game.clockTick, ctx, this.x + this.animation.offsetX, this.y + this.animation.offsetY);
+        //this.animation.drawFrame(this.game.clockTick, ctx, this.x + this.animation.offsetX, this.y + this.animation.offsetY);
     }
     Entity.prototype.draw.call(this);
 }
@@ -198,7 +289,8 @@ function Character(game) {
 	this.attacking = false;
     this.radius = 100;
     this.ground = 400;
-    Entity.call(this, game, 0, 400);
+    this.step = 0;
+    Entity.call(this, game, 0, 84);
 }
 
 Character.prototype = new Entity();
@@ -206,14 +298,16 @@ Character.prototype.constructor = Character;
 
 Character.prototype.update = function () {
     //if (this.game.space) this.jumping = true; //i don't have the jump animation! so we'll leave this out
-	if (this.game.r) {
+	//if (this.game.r) {
+	this.step++;
+	if (this.step % 300 === 0) {
 		if (!this.attacking) {
 			this.attacking = true;
 			this.running = false;
 			this.game.addEntity(new Arrow(this.x, this.y + 40, this.game));
 		}
 	}
-    if (this.game.right && !this.attacking)
+    /*if (this.game.right && !this.attacking)
 		this.running = true;
 	if (this.game.rightUp)
 		this.running = false;
@@ -221,28 +315,13 @@ Character.prototype.update = function () {
 		this.x += 6;
 		if (this.x > 850)
 			this.x = -150;
-	}
+	}*/
 	if (this.attacking) {
         if (this.attackAnimation.isDone()) {
             this.attackAnimation.elapsedTime = 0;
             this.attacking = false;
         }
 	}
-    if (this.jumping) {
-        if (this.jumpAnimation.isDone()) {
-            this.jumpAnimation.elapsedTime = 0;
-            this.jumping = false;
-        }
-        var jumpDistance = this.jumpAnimation.elapsedTime / this.jumpAnimation.totalTime;
-        var totalHeight = 200;
-
-        if (jumpDistance > 0.5)
-            jumpDistance = 1 - jumpDistance;
-
-        //var height = jumpDistance * 2 * totalHeight;
-        var height = totalHeight*(-4 * (jumpDistance * jumpDistance - jumpDistance));
-        this.y = this.ground - height;
-    }
     Entity.prototype.update.call(this);
 }
 
@@ -259,13 +338,43 @@ Character.prototype.draw = function (ctx) {
     Entity.prototype.draw.call(this);
 }
 
+
+Platform.prototype = new Entity();
+Platform.prototype.constructor = Platform;
+
+function Platform(game, x, y, width, height, color) {
+	this.alpha = 1;
+	this.solid = true;
+	this.x = x;
+	this.y = y;
+	this.width = width;
+	this.height = height;
+	this.color = color;
+    this.hitBox = {
+    	x: this.x, 
+		y: this.y,
+		width: width, 
+		height: height
+	};
+    Entity.call(this, game, x, y);
+}
+
+Platform.prototype.draw = function (ctx) {
+	ctx.globalAlpha = this.alpha;
+	var old = ctx.fillStyle;
+	ctx.fillStyle = this.color;
+	ctx.fillRect(this.x, this.y, this.width, this.height);
+	ctx.fillStyle = old;
+    Entity.prototype.draw.call(this);
+    ctx.globalAlpha = 1;
+}
+
 // the "main" code begins here
 
 var ASSET_MANAGER = new AssetManager();
 
 ASSET_MANAGER.queueDownload("./img/madoka_idle.png");
 ASSET_MANAGER.queueDownload("./img/madoka_run.png");
-ASSET_MANAGER.queueDownload("./img/madoka_rain.png");
 ASSET_MANAGER.queueDownload("./img/madoka_arrow.png");
 ASSET_MANAGER.queueDownload("./img/arrow.png");
 ASSET_MANAGER.queueDownload("./img/arrow_start.png");
@@ -280,9 +389,33 @@ ASSET_MANAGER.downloadAll(function () {
     var gameEngine = new GameEngine();
     var bg = new Background(gameEngine);
     var character = new Character(gameEngine);
+    
+    var platformMain = new Platform(gameEngine, 0, 200, 100, 600, "black");
+    var platform2 = new Platform(gameEngine, 350, 400, 200, 20, "blue");
+    var platform3 = new Platform(gameEngine, 100, 700, 700, 50, "black");
+    
 
-    gameEngine.addEntity(bg);
+    var blocks = [
+    	new Platform(gameEngine, 300, 500, 50, 25, "gray"),
+    	new Platform(gameEngine, 350, 500, 50, 25, "gray"),
+    	new Platform(gameEngine, 400, 500, 50, 25, "gray"),
+    	new Platform(gameEngine, 450, 500, 50, 25, "gray")
+    ];
+    //gameEngine.addEntity(bg);
     gameEngine.addEntity(character);
+    gameEngine.addEntity(platformMain);
+    gameEngine.addEntity(platform2);
+    gameEngine.addEntity(platform3);
+
+    for (i = 0; i < blocks.length; i++) {
+    	//gameEngine.addEntity(blocks[i]);
+    }
+    for (i = 0; i < 14; i++) {
+    	for (j = 0; j < 6; j++) {
+    		var newBlock = new Platform(gameEngine, 300 + i * 50, 500 + j * 25, 50, 25, "gray");
+    		gameEngine.addEntity(newBlock);
+    	}
+    }
  
     gameEngine.init(ctx);
     gameEngine.start();
