@@ -1,3 +1,79 @@
+var socket = io.connect("http://24.16.255.56:8888");
+var platforms = [];
+var particles = [];
+var arrows = [];
+var character;
+var gameEngine = new GameEngine();
+
+socket.on("load", function (data) {
+	console.log("loading: "+data.statename+": data amount - "+data.data.length);
+	if (data.statename === "blocks") {
+		if (data.data.length === 0) {
+		    for (i = 0; i < 15; i++) {
+		    	for (j = 0; j < 6; j++) {
+		    		var newBlock = new Platform(gameEngine, 150 + i * 50, 500 + j * 25, 50, 25, "gray");
+		    		platforms.push(newBlock);
+		    		gameEngine.addEntity(newBlock);
+		    	}
+		    }
+		} else {
+			for (i = 0; i < data.data.length; i++) {
+				var raw = data.data[i];
+				var newBlock = new Platform(gameEngine, Number(raw[1]), Number(raw[2]), 50, 25, "gray");
+				newBlock.deadTicks = Number(raw[0]);
+				newBlock.alpha = parseFloat(raw[3]);
+				platforms.push(newBlock);
+				gameEngine.addEntity(newBlock);
+				
+			}
+		}
+	}
+	if (data.statename === "particles") {
+		for (i = 0; i < data.data.length; i++) {
+			var raw = data.data[i];
+			var newPart = new Particle(parseFloat(raw[0]), parseFloat(raw[1]), parseFloat(raw[2]), parseFloat(raw[3]),
+					parseFloat(raw[3]), parseFloat(raw[4]), parseFloat(raw[4]),	parseFloat(raw[5]), parseFloat(raw[6]), 
+					0, parseFloat(raw[7]), parseFloat(raw[8]), parseFloat(raw[9]), parseFloat(raw[10]), 0, (raw[11] == 'true'), gameEngine, 
+					new Animation(ASSET_MANAGER.getAsset("./img/pink_flare.png"), 0, 0, 64, 64, 0.03, 16, true, false, 0, 0));
+			newPart.life = raw[12];
+			newPart.animation.elaspedTime = raw[13];
+			particles.push(newPart);
+			gameEngine.addEntity(newPart);
+		}
+	}
+	if (data.statename === "arrows") {
+		for (i = 0; i < data.data.length; i++) {
+			var raw = data.data[i];
+			var newArrow = new Arrow(raw[0], raw[1], gameEngine);
+			newArrow.hSpeed = raw[3];
+			newArrow.vSpeed = raw[4];
+			newArrow.starting = (raw[2] == 'true');
+			newArrow.tick = raw[5];
+			newArrow.life = raw[6];
+			newArrow.generation = raw[7];
+			newArrow.lastCollision = raw[8];
+			arrows.push(newArrow);
+			gameEngine.addEntity(newArrow);
+		}
+	}
+	if (data.statename === "attacking") {
+		character.attacking = (data.data == 'true');
+	}
+	if (data.statename === "step") {
+		character.step = Number(data.data);
+	}
+	if (data.statename === "clock") {
+		gameEngine.clockTick = parseFloat(data.data);
+	}
+	if (data.statename === "animTime") {
+		character.animation.elaspedTime = parseFloat(data.data);
+	}
+	if (data.statename === "attackTime") {
+		character.attackAnimation.elaspedTime = parseFloat(data.data);
+	}
+    console.log(data);
+});
+
 function Animation(spriteSheet, startX, startY, frameWidth, frameHeight, frameDuration, frames, loop, reverse, offsetX, offsetY) {
     this.spriteSheet = spriteSheet;
     this.startX = startX;
@@ -74,6 +150,30 @@ Background.prototype.draw = function (ctx) {
 var ARROW_PART_MAIN = 1;
 var ARROW_PART_SECONDARY = 2;
 
+function makeParticleData() {
+	var data = [];
+	for (i = 0; i < particles.length; i++) {
+		var particle = particles[i];
+		var newData = [];
+		newData.push(particle.particleId);
+		newData.push(particle.x);
+		newData.push(particle.y);
+		newData.push(particle.hSpeed);
+		newData.push(particle.vSpeed);
+		newData.push(particle.gravity);
+		newData.push(particle.friction);
+		newData.push(particle.maxLife);
+		newData.push(particle.fadeIn);
+		newData.push(particle.fadeOut);
+		newData.push(particle.maxAlpha);
+		newData.push(particle.shrink);
+		newData.push(particle.life);
+		newData.push(particle.elaspedTime);
+		data.push(newData);
+	}
+	return data;
+}
+
 function Particle(particleId, x, y, minHSpeed, maxHSpeed, minVSpeed, maxVSpeed,
 	gravity, friction, width, maxLife, fadeIn, fadeOut, maxAlpha, alphaVariance, shrink, game, anim) {
 	this.particleId = particleId;
@@ -113,7 +213,7 @@ Particle.prototype.update = function() {
 		this.alpha = 1 - ((this.life - this.maxLife) / this.fadeOut)
 	}
 	if (this.life > this.maxLife + this.fadeOut) {
-		this.removeFromWorld = true;	
+		this.removeFromWorld = true;
 	}
 	if (this.shrink) {
 		this.sizeScale = 1 - this.life / (this.maxLife + this.fadeOut);
@@ -135,6 +235,9 @@ Particle.prototype.update = function() {
 	this.y += this.vSpeed;
 	if (this.y >= 800)
 		this.removeFromWorld = true;
+	if (this.removeFromWorld) {
+		particles.splice(particles.indexOf(this), 1);
+	}
 	this.life++;
     Entity.prototype.update.call(this);
 }
@@ -164,6 +267,25 @@ function checkCollision(entity1, entity2) {
         }
     }
     return false;
+}
+
+function makeArrowData() {
+	var data = [];
+	for (i = 0; i < arrows.length; i++) {
+		var arrow = arrows[i];
+		var newData = [];
+		newData.push(arrow.x);
+		newData.push(arrow.y);
+		newData.push(arrow.starting);
+		newData.push(arrow.hSpeed);
+		newData.push(arrow.vSpeed);
+		newData.push(arrow.tick);
+		newData.push(arrow.life);
+		newData.push(arrow.generation);
+		newData.push(arrow.lastCollision);
+		data.push(newData);
+	}
+	return data;
 }
 
 function Arrow(x, y, game) {
@@ -197,6 +319,9 @@ Arrow.prototype.update = function() {
 		}
 	}
 	this.tick++;
+	if (this.tick >= 1000) {
+		this.removeFromWorld = true;
+	}
 	if (this.tick >= 30 && this.starting) {
 		this.starting = false;
 		this.hSpeed = 3 + Math.random() * 12;
@@ -216,16 +341,22 @@ Arrow.prototype.update = function() {
 				newArrow.tick = this.tick;
 				newArrow.life = 50;
 				newArrow.generation = this.generation + 1;
+				arrows.push(newArrow);
 				this.game.addEntity(newArrow);
 			}
 		}
 	}
-	if (this.lastCollision === "blue")
-		this.game.addEntity(new Particle(ARROW_PART_MAIN, this.x, this.y - 10, 0.2, -0.2, 0.2, -0.2, 0, 0, 5, 50, 10, 50, 0.7, 0.2, true, this.game,
-				new Animation(ASSET_MANAGER.getAsset("./img/pink_flare.png"), 0, 0, 64, 64, 0.03, 16, true, false, 0, 0)));
-	else
-		this.game.addEntity(new Particle(ARROW_PART_MAIN, this.x, this.y - 10, 0.2, -0.2, 0.2, -0.2, 0, 0, 5, 5, 10, 50, 0.7, 0.2, true, this.game,
-			new Animation(ASSET_MANAGER.getAsset("./img/pink_flare.png"), 0, 0, 64, 64, 0.03, 16, true, false, 0, 0)));
+	if (this.lastCollision === "blue") {
+		var part = new Particle(ARROW_PART_MAIN, this.x, this.y - 10, 0.2, -0.2, 0.2, -0.2, 0, 0, 5, 50, 10, 50, 0.7, 0.2, true, this.game,
+				new Animation(ASSET_MANAGER.getAsset("./img/pink_flare.png"), 0, 0, 64, 64, 0.03, 16, true, false, 0, 0));
+		particles.push(part);
+		this.game.addEntity(part);
+	} else {
+		var part = new Particle(ARROW_PART_MAIN, this.x, this.y - 10, 0.2, -0.2, 0.2, -0.2, 0, 0, 5, 5, 10, 50, 0.7, 0.2, true, this.game,
+				new Animation(ASSET_MANAGER.getAsset("./img/pink_flare.png"), 0, 0, 64, 64, 0.03, 16, true, false, 0, 0));
+		particles.push(part);
+		this.game.addEntity(part);
+	}
 	if (!this.starting) {
 		this.x += this.hSpeed;
 		//this.travelX += 6;
@@ -241,7 +372,7 @@ Arrow.prototype.update = function() {
 		else
 		this.game.entities.forEach(function(entity) {
 	    	if (entity.solid) {
-		        if (checkCollision(that, entity)) {
+		        if (checkCollision(that, entity) && entity.alpha > 0) {
 		        	if (that.y > entity.hitBox.y && that.y < entity.hitBox.y + entity.hitBox.height) {
 		        		that.hSpeed *= -1;
 		        		that.x += that.hSpeed;
@@ -252,7 +383,8 @@ Arrow.prototype.update = function() {
 		        	if (entity.color === "gray") {
 		        		entity.alpha -= 0.1;
 		        		if (entity.alpha < 0) {
-		        			entity.removeFromWorld = true;
+		        			entity.deadTicks = 500;
+		        			entity.alpha = 0;
 		        		}
 		        	}
 		        	that.lastCollision = entity.color;
@@ -265,6 +397,9 @@ Arrow.prototype.update = function() {
 		if (this.y >= 1200) {
 			this.removeFromWorld = true;
 		}
+	}
+	if (this.removeFromWorld) {
+		arrows.splice(arrows.indexOf(this), 1);
 	}
 	
     Entity.prototype.update.call(this);
@@ -281,6 +416,9 @@ Arrow.prototype.draw = function (ctx) {
 
 
 function Character(game) {
+	socket.emit("load", { studentname: "Stan Hu", statename: "blocks" });
+	socket.emit("load", { studentname: "Stan Hu", statename: "particles" });
+	socket.emit("load", { studentname: "Stan Hu", statename: "arrows" });
     this.animation = new Animation(ASSET_MANAGER.getAsset("./img/madoka_idle.png"), 0, 0, 673 / 8 - 1, 133, 0.1, 8, true, false, 0, 0);
     this.runAnimation = new Animation(ASSET_MANAGER.getAsset("./img/madoka_run.png"), 0, 0, 811 / 8 - 1, 133, 0.1, 8, true, false, 8, -5);
     this.attackAnimation = new Animation(ASSET_MANAGER.getAsset("./img/madoka_arrow.png"), 0, 0, 811 / 6 - 1, 133, 0.1, 9, false, false, -23, -8);
@@ -290,6 +428,11 @@ function Character(game) {
     this.radius = 100;
     this.ground = 400;
     this.step = 0;
+	socket.emit("load", { studentname: "Stan Hu", statename: "attacking" });
+	socket.emit("load", { studentname: "Stan Hu", statename: "step" });
+	socket.emit("load", { studentname: "Stan Hu", statename: "clock" });
+	socket.emit("load", { studentname: "Stan Hu", statename: "animTime" });
+	socket.emit("load", { studentname: "Stan Hu", statename: "attackTime" });
     Entity.call(this, game, 0, 84);
 }
 
@@ -297,14 +440,14 @@ Character.prototype = new Entity();
 Character.prototype.constructor = Character;
 
 Character.prototype.update = function () {
-    //if (this.game.space) this.jumping = true; //i don't have the jump animation! so we'll leave this out
-	//if (this.game.r) {
 	this.step++;
 	if (this.step % 300 === 0) {
 		if (!this.attacking) {
 			this.attacking = true;
 			this.running = false;
-			this.game.addEntity(new Arrow(this.x, this.y + 40, this.game));
+			var newArrow = new Arrow(this.x, this.y + 40, this.game);
+			arrows.push(newArrow);
+			this.game.addEntity(newArrow);
 		}
 	}
     /*if (this.game.right && !this.attacking)
@@ -322,6 +465,14 @@ Character.prototype.update = function () {
             this.attacking = false;
         }
 	}
+	socket.emit("save", { studentname: "Stan Hu", statename: "blocks", data: makeBlockData() });
+	socket.emit("save", { studentname: "Stan Hu", statename: "particles", data: makeParticleData() });
+	socket.emit("save", { studentname: "Stan Hu", statename: "arrows", data: makeArrowData() });
+	socket.emit("save", { studentname: "Stan Hu", statename: "attacking", data: this.attacking });
+	socket.emit("save", { studentname: "Stan Hu", statename: "step", data: this.step });
+	socket.emit("save", { studentname: "Stan Hu", statename: "clock", data: this.game.clockTick });
+	socket.emit("save", { studentname: "Stan Hu", statename: "animTime", data: this.animation.elapsedTime });
+	socket.emit("save", { studentname: "Stan Hu", statename: "attackTime", data: this.attackAnimation.elapsedTime });
     Entity.prototype.update.call(this);
 }
 
@@ -338,11 +489,26 @@ Character.prototype.draw = function (ctx) {
     Entity.prototype.draw.call(this);
 }
 
+function makeBlockData() {
+	var data = [];
+	for (i = 0; i < platforms.length; i++) {
+		var platform = platforms[i];
+		var newData = [];
+		newData.push(platform.deadTicks);
+		newData.push(platform.x);
+		newData.push(platform.y);
+		newData.push(platform.alpha);
+		data.push(newData);
+	}
+	return data;
+}
+
 
 Platform.prototype = new Entity();
 Platform.prototype.constructor = Platform;
 
 function Platform(game, x, y, width, height, color) {
+	this.deadTicks = 0;
 	this.alpha = 1;
 	this.solid = true;
 	this.x = x;
@@ -357,6 +523,15 @@ function Platform(game, x, y, width, height, color) {
 		height: height
 	};
     Entity.call(this, game, x, y);
+}
+
+Platform.prototype.update = function(ctx) {
+	if (this.deadTicks > 0) {
+		this.deadTicks--;
+		if (this.deadTicks === 0)
+			this.alpha = 1;
+	}
+    Entity.prototype.update.call(this);
 }
 
 Platform.prototype.draw = function (ctx) {
@@ -386,36 +561,18 @@ ASSET_MANAGER.downloadAll(function () {
     var canvas = document.getElementById('gameWorld');
     var ctx = canvas.getContext('2d');
 
-    var gameEngine = new GameEngine();
     var bg = new Background(gameEngine);
-    var character = new Character(gameEngine);
+    character = new Character(gameEngine);
     
     var platformMain = new Platform(gameEngine, 0, 200, 100, 600, "black");
     var platform2 = new Platform(gameEngine, 350, 400, 200, 20, "blue");
     var platform3 = new Platform(gameEngine, 100, 700, 700, 50, "black");
     
-
-    var blocks = [
-    	new Platform(gameEngine, 300, 500, 50, 25, "gray"),
-    	new Platform(gameEngine, 350, 500, 50, 25, "gray"),
-    	new Platform(gameEngine, 400, 500, 50, 25, "gray"),
-    	new Platform(gameEngine, 450, 500, 50, 25, "gray")
-    ];
     //gameEngine.addEntity(bg);
     gameEngine.addEntity(character);
     gameEngine.addEntity(platformMain);
     gameEngine.addEntity(platform2);
     gameEngine.addEntity(platform3);
-
-    for (i = 0; i < blocks.length; i++) {
-    	//gameEngine.addEntity(blocks[i]);
-    }
-    for (i = 0; i < 14; i++) {
-    	for (j = 0; j < 6; j++) {
-    		var newBlock = new Platform(gameEngine, 300 + i * 50, 500 + j * 25, 50, 25, "gray");
-    		gameEngine.addEntity(newBlock);
-    	}
-    }
  
     gameEngine.init(ctx);
     gameEngine.start();
